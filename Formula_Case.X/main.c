@@ -15,8 +15,12 @@ void __interrupt (high_priority) high_ISR(void);   //high priority interrupt rou
 void __interrupt (low_priority) low_ISR(void);  //low priority interrupt routine, not used in this example
 void initChip(void);
 void start_adc(void);
+void stop_adc(void);
+void enable_adc(void);
 void init_state(void);
 bool getONOFFToggle(void);
+void apply_brake(char brake);
+void apply_throttle(char throttle);
 
 
 /*
@@ -25,6 +29,8 @@ bool getONOFFToggle(void);
 //volatile int  counter = 0;
 bool readingThrottle = false;
 bool ONOFFWasPressed = false;
+char throttleInput = 0;
+char brakeInput = 0;
 static enum{FSM_ready_to_drive,FSM_not_ready_to_drive}car_state;
 /*
  * Interrupt Service Routines
@@ -36,11 +42,27 @@ void __interrupt (high_priority) high_ISR(void)
 {
     if(PIR1bits.ADIF == 1)
     {
-        //we got an adc interrupt
-        PORTB = ADRESH;
+        //adc interrupt
+        if(readingThrottle)
+        {
+            throttleInput = ADRESH;
+        }
+        else
+        {
+            brakeInput = ADRESH;
+        }
+        
         PIR1bits.ADIF = 0;
         readingThrottle = !readingThrottle;
         start_adc();
+    }
+    if(IPR1bits.TMR1IP == 1)
+    {
+        //timer 1 interrupt
+        if(ADCON0bits.GODONE == 0) start_adc();
+        
+        //assign received values from the adc
+        apply_throttle(throttleInput);
     }
     
 }
@@ -55,7 +77,6 @@ void main(void)
 {
     initChip();
     init_state();
-    start_adc();
     
     while(1)
     {       
@@ -66,16 +87,24 @@ void main(void)
                 if(getONOFFToggle())
                 {
                     car_state = FSM_ready_to_drive;
+                    enable_adc();
+                    start_adc();
                 }
-                LATCbits.LATC1 = 0;
-                //LATCbits.LATC2 = 1;
+                LATAbits.LATA7 = 0;
+                
+                brakeInput = 0;
+                throttleInput = 0;;
                 break;
+                
             case FSM_ready_to_drive:
                 if(getONOFFToggle())
                 {
                     car_state = FSM_not_ready_to_drive;
+                    stop_adc();
                 }
-                LATCbits.LATC1 = 1;
+                LATAbits.LATA7 = 1;
+                
+                
                 break;
                 
         }
@@ -92,6 +121,17 @@ bool getONOFFToggle(void)
     return toggled;
 }
 
+void apply_throttle(char throttle)
+{
+    CCPR2L = throttle;
+}
+
+void enable_adc(void)
+{
+    T1CONbits.TMR1ON = 1;
+    ADCON0bits.ADON = 1;
+}
+
 void start_adc(void)
 {
     if(readingThrottle)
@@ -105,6 +145,12 @@ void start_adc(void)
         ADCON0bits.CHS = 0b00001;
     }
     ADCON0bits.GODONE = 1;
+}
+void stop_adc(void)
+{
+    T1CONbits.TMR1ON = 1;
+    ADCON0bits.ADON = 0;
+    
 }
 
 void init_state(void)
@@ -125,7 +171,7 @@ void initChip(void)
 	ACTCON = 0x90; //Enable active clock tuning for USB operation
 
     LATA = 0x00; //Initial PORTA
-    TRISA = 0xFF; //Define PORTA as input
+    TRISA = 0b01111111; //Define PORTA as input
     ADCON1 = 0x00; //AD voltage reference
     ANSELA = 0b00000001; // define analog or digital
     CM1CON0 = 0x00; //Turn off Comparator
@@ -143,4 +189,15 @@ void initChip(void)
     INTCON = 0b11000000;
     IPR1bits.ADIP = 1;
     PIE1bits.ADIE = 1;
+    //timer 2 for pwm, for the dc motor
+    T2CON = 0b1111111;
+    PR2 = 0xFF;
+    CCP2CONbits.CCP2M = 0b1111;
+    //timer 1 for adc start (otherwise adc is non stop working)
+    T1CONbits.TMR1CS = 0b00;
+    T1CONbits.T1CKPS = 0b11;
+    IPR1bits.TMR1IP = 1;
+    
+    
+    
 }
