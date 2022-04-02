@@ -7,20 +7,21 @@
 
 
 #include <xc.h>
+#include <stdbool.h>
 /*
  * Prototypes
  */
 void __interrupt (high_priority) high_ISR(void);   //high priority interrupt routine
 void __interrupt (low_priority) low_ISR(void);  //low priority interrupt routine, not used in this example
 void initChip(void);
-
+void start_adc(void);
 
 
 /*
  * Global Variables
  */
 //volatile int  counter = 0;
-
+bool readingThrottle = false;
 /*
  * Interrupt Service Routines
  */
@@ -29,7 +30,13 @@ void initChip(void);
 **********************************************************/
 void __interrupt (high_priority) high_ISR(void)
 {
-    
+    if(PIR1bits.ADIF == 1)
+    {
+        //we got an adc interrupt
+        PORTB = ADRESH;
+        PIR1bits.ADIF = 0;
+        start_adc();
+    }
     
 }
 
@@ -42,7 +49,29 @@ void __interrupt (high_priority) high_ISR(void)
 void main(void)
 {
     initChip();
+    start_adc();
+    
+    while(1)
+    {
+        //keep running
+    }
 
+}
+
+void start_adc(void)
+{
+    if(readingThrottle)
+    {
+        //read throttle
+        ADCON0bits.CHS = 0b00000;      
+    }
+    else
+    {
+        //read brake
+        ADCON0bits.CHS = 0b00001;
+    }
+    ADCON0bits.GODONE = 1;
+    readingThrottle = !readingThrottle;
 }
 
 /*************************************************
@@ -67,5 +96,13 @@ void initChip(void)
     LATC = 0x00; //Initial PORTC
     TRISC = 0x00; //Define PORTC as output
     
-    
+    //enable adc 
+    ADCON0bits.ADON = 1;
+    ANSELAbits.ANSA0 = 1;
+    ANSELAbits.ANSA1 = 1;
+    ADCON2 = 0b00100101;
+    //adc interrupts
+    INTCON = 0b11000000;
+    IPR1bits.ADIP = 1;
+    PIE1bits.ADIE = 1;
 }
