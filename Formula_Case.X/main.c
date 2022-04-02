@@ -52,17 +52,15 @@ void __interrupt (high_priority) high_ISR(void)
             brakeInput = ADRESH;
         }
         
+        apply_brake(brakeInput);
+        if(!(brakeInput > 7 && throttleInput > 7))
+            apply_throttle(throttleInput);
+        else
+            apply_throttle(0);
+        
         PIR1bits.ADIF = 0;
         readingThrottle = !readingThrottle;
         start_adc();
-    }
-    if(IPR1bits.TMR1IP == 1)
-    {
-        //timer 1 interrupt
-        if(ADCON0bits.GODONE == 0) start_adc();
-        
-        //assign received values from the adc
-        apply_throttle(throttleInput);
     }
     
 }
@@ -92,8 +90,8 @@ void main(void)
                 }
                 LATAbits.LATA7 = 0;
                 
-                brakeInput = 0;
-                throttleInput = 0;;
+                apply_brake(0);
+                apply_throttle(0);
                 break;
                 
             case FSM_ready_to_drive:
@@ -103,6 +101,7 @@ void main(void)
                     stop_adc();
                 }
                 LATAbits.LATA7 = 1;
+                
                 
                 
                 break;
@@ -120,7 +119,9 @@ bool getONOFFToggle(void)
     ONOFFWasPressed = ONOFFPressed;
     return toggled;
 }
-
+void apply_brake(char brake){
+    
+}
 void apply_throttle(char throttle)
 {
     CCPR2L = throttle;
@@ -193,10 +194,7 @@ void initChip(void)
     T2CON = 0b1111111;
     PR2 = 0xFF;
     CCP2CONbits.CCP2M = 0b1111;
-    //timer 1 for adc start (otherwise adc is non stop working)
-    T1CONbits.TMR1CS = 0b00;
-    T1CONbits.T1CKPS = 0b11;
-    IPR1bits.TMR1IP = 1;
+
     
     
     
