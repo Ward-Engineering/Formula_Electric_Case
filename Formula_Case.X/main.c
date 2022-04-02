@@ -12,6 +12,7 @@
 
 #define SERVO LATAbits.LA6
 #define ONLED LATAbits.LA7
+#define IMPLA LATAbits.LA5
 /*
  * Prototypes
  */
@@ -31,10 +32,12 @@ bool getONOFFToggle(void);
 //volatile int  counter = 0;
 bool readingThrottle = false;
 bool ONOFFWasPressed = false;
+bool implausibility = false;
 char throttleInput = 0;
 char brakeInput = 0;
 int brakeCounter = 0;
 int brakeOnTime = 0;
+int implaCounter = 0;
 static enum{FSM_ready_to_drive,FSM_not_ready_to_drive}car_state;
 /*
  * Interrupt Service Routines
@@ -57,7 +60,12 @@ void __interrupt (high_priority) high_ISR(void)
         }
         
         if((brakeInput > 7 && throttleInput > 7))
+        {
             throttleInput = 0;
+            implausibility = true;
+        }
+        else
+            implausibility = false;
         
         
         PIR1bits.ADIF = 0;
@@ -80,6 +88,19 @@ void __interrupt (high_priority) high_ISR(void)
             brakeOnTime = brakeInput *0.09 + 29;
             SERVO = 1;
         }
+        //flash light if implausibility
+        if(implausibility){
+            implaCounter ++;
+            if(implaCounter > 2000)
+            {
+                implaCounter = 0;
+                if(IMPLA == 0)
+                    IMPLA = 1;
+                else
+                    IMPLA = 0;
+            }
+        }
+        
         TMR0L = 16;
         INTCONbits.TMR0IF = 0;
     }
@@ -186,7 +207,7 @@ void initChip(void)
 	ACTCON = 0x90; //Enable active clock tuning for USB operation
 
     LATA = 0x00; //Initial PORTA
-    TRISA = 0b00111111; //Define PORTA as input
+    TRISA = 0b00011111; //Define PORTA as input
     ADCON1 = 0x00; //AD voltage reference
     ANSELA = 0b00000001; // define analog or digital
     CM1CON0 = 0x00; //Turn off Comparator
