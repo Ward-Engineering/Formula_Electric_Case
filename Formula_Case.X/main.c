@@ -8,6 +8,9 @@
 
 #include <xc.h>
 #include <stdbool.h>
+
+
+#define SERVO LATCbits.LATC7
 /*
  * Prototypes
  */
@@ -19,8 +22,6 @@ void stop_adc(void);
 void enable_adc(void);
 void init_state(void);
 bool getONOFFToggle(void);
-void apply_brake(char brake);
-void apply_throttle(char throttle);
 
 
 /*
@@ -31,6 +32,8 @@ bool readingThrottle = false;
 bool ONOFFWasPressed = false;
 char throttleInput = 0;
 char brakeInput = 0;
+int brakeCounter = 0;
+int brakeOnTime = 0;
 static enum{FSM_ready_to_drive,FSM_not_ready_to_drive}car_state;
 /*
  * Interrupt Service Routines
@@ -52,15 +55,38 @@ void __interrupt (high_priority) high_ISR(void)
             brakeInput = ADRESH;
         }
         
-        apply_brake(brakeInput);
-        if(!(brakeInput > 7 && throttleInput > 7))
-            apply_throttle(throttleInput);
-        else
-            apply_throttle(0);
+        if((brakeInput > 7 && throttleInput > 7))
+            throttleInput = 0;
+        CCPR2L = throttleInput;
         
         PIR1bits.ADIF = 0;
         readingThrottle = !readingThrottle;
         start_adc();
+    }
+    if(INTCONbits.TMR0IF == 1)
+    {
+        if(LATCbits.LATC6 == 1)
+        {
+            LATCbits.LATC6 = 0;
+        }
+        else 
+            LATCbits.LATC6 = 1;
+        //apply brake
+        //total period is 20000 us, range is 575 - 2460 us, interrupt gets called every 20 us
+        if(brakeCounter > brakeOnTime)
+        {
+            SERVO = 0;
+        }
+        
+        brakeCounter ++;
+        if(brakeCounter > 1000)
+        {
+            brakeCounter = 0;
+            brakeOnTime = brakeInput *0.09 + 29;
+            SERVO = 1;
+        }
+        TMR0L = 16;
+        INTCONbits.TMR0IF = 0;
     }
     
 }
@@ -90,8 +116,8 @@ void main(void)
                 }
                 LATAbits.LATA7 = 0;
                 
-                apply_brake(0);
-                apply_throttle(0);
+                brakeInput = 0;
+                throttleInput = 0;
                 break;
                 
             case FSM_ready_to_drive:
@@ -119,13 +145,7 @@ bool getONOFFToggle(void)
     ONOFFWasPressed = ONOFFPressed;
     return toggled;
 }
-void apply_brake(char brake){
-    
-}
-void apply_throttle(char throttle)
-{
-    CCPR2L = throttle;
-}
+
 
 void enable_adc(void)
 {
@@ -186,15 +206,22 @@ void initChip(void)
     ANSELAbits.ANSA0 = 1;
     ANSELAbits.ANSA1 = 1;
     ADCON2 = 0b00100101;
-    //adc interrupts
-    INTCON = 0b11000000;
+    //adc interrupts & timer0 interrupts
+    INTCON = 0b11100000;
+    INTCON2bits.TMR0IP = 1;
     IPR1bits.ADIP = 1;
     PIE1bits.ADIE = 1;
     //timer 2 for pwm, for the dc motor
     T2CON = 0b1111111;
     PR2 = 0xFF;
     CCP2CONbits.CCP2M = 0b1111;
-
+    //timer 0
+    T0CONbits.TMR0ON = 1;
+    T0CONbits.T08BIT = 1;
+    T0CONbits.T0CS = 0;
+    T0CONbits.PSA = 0;
+    T0CONbits.T0PS = 0b000;
+    
     
     
     
