@@ -15,6 +15,8 @@ void __interrupt (high_priority) high_ISR(void);   //high priority interrupt rou
 void __interrupt (low_priority) low_ISR(void);  //low priority interrupt routine, not used in this example
 void initChip(void);
 void start_adc(void);
+void init_state(void);
+bool getONOFFToggle(void);
 
 
 /*
@@ -22,6 +24,8 @@ void start_adc(void);
  */
 //volatile int  counter = 0;
 bool readingThrottle = false;
+bool ONOFFWasPressed = false;
+static enum{FSM_ready_to_drive,FSM_not_ready_to_drive}car_state;
 /*
  * Interrupt Service Routines
  */
@@ -35,6 +39,7 @@ void __interrupt (high_priority) high_ISR(void)
         //we got an adc interrupt
         PORTB = ADRESH;
         PIR1bits.ADIF = 0;
+        readingThrottle = !readingThrottle;
         start_adc();
     }
     
@@ -49,13 +54,42 @@ void __interrupt (high_priority) high_ISR(void)
 void main(void)
 {
     initChip();
+    init_state();
     start_adc();
     
     while(1)
-    {
+    {       
         //keep running
+        switch(car_state)
+        {
+            case FSM_not_ready_to_drive:
+                if(getONOFFToggle())
+                {
+                    car_state = FSM_ready_to_drive;
+                }
+                LATCbits.LATC1 = 0;
+                //LATCbits.LATC2 = 1;
+                break;
+            case FSM_ready_to_drive:
+                if(getONOFFToggle())
+                {
+                    car_state = FSM_not_ready_to_drive;
+                }
+                LATCbits.LATC1 = 1;
+                break;
+                
+        }
+        
     }
 
+}
+
+bool getONOFFToggle(void)
+{
+    bool ONOFFPressed = (PORTCbits.RC0 == 0);
+    bool toggled = (ONOFFPressed && !ONOFFWasPressed);
+    ONOFFWasPressed = ONOFFPressed;
+    return toggled;
 }
 
 void start_adc(void)
@@ -71,7 +105,11 @@ void start_adc(void)
         ADCON0bits.CHS = 0b00001;
     }
     ADCON0bits.GODONE = 1;
-    readingThrottle = !readingThrottle;
+}
+
+void init_state(void)
+{
+    car_state = FSM_not_ready_to_drive;
 }
 
 /*************************************************
@@ -94,7 +132,7 @@ void initChip(void)
     LATB = 0x00; //Initial PORTB
     TRISB = 0x00; //Define PORTB as output
     LATC = 0x00; //Initial PORTC
-    TRISC = 0x00; //Define PORTC as output
+    TRISC = 0b00000001; //Define PORTC as output, with the exception of rc0
     
     //enable adc 
     ADCON0bits.ADON = 1;
