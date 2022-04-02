@@ -1,3 +1,7 @@
 Als bonus, als ge daarvoor u scherm kunt gebruiken dat een beke een snelheid simuleert.
 Of nog iets anders, die DC motor uit de doos trekt toch niet veel stroom, gebruik die om met u gas aan te 
 drijven
+
+Offset maken -> kunt detecteren wanneer dat er iets losgekoppeld wordt -> led laten flikkeren
+abs -> als ge over een bepaalde sterkte remt dan gaat er iets flikkeren
+als ge hard genoeg remt dan gaan de rem lichten flikkeren

@@ -10,7 +10,8 @@
 #include <stdbool.h>
 
 
-#define SERVO LATCbits.LATC7
+#define SERVO LATAbits.LA6
+#define ONLED LATAbits.LA7
 /*
  * Prototypes
  */
@@ -57,7 +58,7 @@ void __interrupt (high_priority) high_ISR(void)
         
         if((brakeInput > 7 && throttleInput > 7))
             throttleInput = 0;
-        CCPR2L = throttleInput;
+        
         
         PIR1bits.ADIF = 0;
         readingThrottle = !readingThrottle;
@@ -65,12 +66,6 @@ void __interrupt (high_priority) high_ISR(void)
     }
     if(INTCONbits.TMR0IF == 1)
     {
-        if(LATCbits.LATC6 == 1)
-        {
-            LATCbits.LATC6 = 0;
-        }
-        else 
-            LATCbits.LATC6 = 1;
         //apply brake
         //total period is 20000 us, range is 575 - 2460 us, interrupt gets called every 20 us
         if(brakeCounter > brakeOnTime)
@@ -101,6 +96,7 @@ void main(void)
 {
     initChip();
     init_state();
+    start_adc();
     
     while(1)
     {       
@@ -111,23 +107,19 @@ void main(void)
                 if(getONOFFToggle())
                 {
                     car_state = FSM_ready_to_drive;
-                    enable_adc();
-                    start_adc();
+                    
                 }
-                LATAbits.LATA7 = 0;
-                
-                brakeInput = 0;
-                throttleInput = 0;
+                ONLED = 0;
+                CCPR2L = 0;
                 break;
                 
             case FSM_ready_to_drive:
                 if(getONOFFToggle())
                 {
                     car_state = FSM_not_ready_to_drive;
-                    stop_adc();
                 }
-                LATAbits.LATA7 = 1;
-                
+                ONLED = 1;
+                CCPR2L = throttleInput;
                 
                 
                 break;
@@ -149,12 +141,15 @@ bool getONOFFToggle(void)
 
 void enable_adc(void)
 {
-    T1CONbits.TMR1ON = 1;
     ADCON0bits.ADON = 1;
 }
 
 void start_adc(void)
 {
+    if(car_state == FSM_not_ready_to_drive)
+    {
+        readingThrottle = false;
+    }
     if(readingThrottle)
     {
         //read throttle
@@ -169,7 +164,6 @@ void start_adc(void)
 }
 void stop_adc(void)
 {
-    T1CONbits.TMR1ON = 1;
     ADCON0bits.ADON = 0;
     
 }
@@ -192,7 +186,7 @@ void initChip(void)
 	ACTCON = 0x90; //Enable active clock tuning for USB operation
 
     LATA = 0x00; //Initial PORTA
-    TRISA = 0b01111111; //Define PORTA as input
+    TRISA = 0b00111111; //Define PORTA as input
     ADCON1 = 0x00; //AD voltage reference
     ANSELA = 0b00000001; // define analog or digital
     CM1CON0 = 0x00; //Turn off Comparator
@@ -223,6 +217,12 @@ void initChip(void)
     T0CONbits.T0PS = 0b000;
     
     
-    
+    //Questions:
+    // Why no brake by wire?
+    // If wire comes loose/gets cut -> brakes will go the full brake 
+    // But if ecu keeps brakes open because if a bug, or it being stuck or something else breaking -> no brakes anymore
+    // No feedback, breaks wear
+    // 
+    // safer would be a hydraulic brake
     
 }
