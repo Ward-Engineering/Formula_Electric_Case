@@ -50,7 +50,7 @@ void main(void)
 **************************************************/
 void initChip(void)
 {
-	//CLK settings
+	//CLK settings, should be fine
 	OSCTUNE = 0x80; //3X PLL ratio mode selected
 	OSCCON = 0x70; //Switch to 16MHz HFINTOSC
 	OSCCON2 = 0x10; //Enable PLL, SOSC, PRI OSC drivers turned off
