@@ -34,15 +34,16 @@ bool getONOFFToggle(void);
 bool readingThrottle = false;
 bool ONOFFWasPressed = false;
 bool implausibility = false;
-bool hardBraking = false;
 bool disConnected = false;
 char throttleInput = 0;
 char rawThrottleInput = 100;
 char brakeInput = 0;
 int brakeCounter = 0;
 int brakeOnTime = 0;
+int infoBrakingCounter = 0;
 int disconnectCounter = 0;
 static enum{FSM_ready_to_drive,FSM_not_ready_to_drive}car_state;
+static enum{INFO_braking,INFO_no_braking,INFO_hard_braking}info_brakes;
 /*
  * Interrupt Service Routines
  */
@@ -64,14 +65,14 @@ void __interrupt (high_priority) high_ISR(void)
             brakeInput = ADRESH;
         }
         
-        if(brakeInput > 200)
-        {
-            hardBraking = true;
+        if(brakeInput > 150){
+            info_brakes = INFO_hard_braking;
         }
-        else
-        {
-            hardBraking = false;   
+        else if(brakeInput > 1){
+            info_brakes = INFO_braking;
         }
+        else 
+            info_brakes = INFO_no_braking;
         
         if((rawThrottleInput < 5) || (brakeInput > 250))
         {
@@ -110,24 +111,6 @@ void __interrupt (high_priority) high_ISR(void)
             brakeOnTime = brakeInput *0.09 + 29;
             SERVO = 1;
         }
-        //flash light if disconnected, light on when implausibility 
-        if(disConnected)
-        {
-            disconnectCounter ++;
-            if(disconnectCounter > 2000)
-            {
-                disconnectCounter = 0;
-                if(ERRORLED == 0)
-                    ERRORLED = 1;
-                else
-                    ERRORLED = 0;
-            }
-            
-        }
-        else if(implausibility){
-            ERRORLED = 1;
-        }
-        else ERRORLED = 0;
         
         TMR0L = 16;
         INTCONbits.TMR0IF = 0;
@@ -172,6 +155,45 @@ void main(void)
                     CCPR2L = throttleInput - 20;
                 else
                     CCPR2L = 0;
+                
+                //flash light if disconnected, light on when implausibility 
+                if(disConnected)
+                {
+                    disconnectCounter ++;
+                    if(disconnectCounter > 3000)
+                    {
+                        disconnectCounter = 0;
+                        if(ERRORLED == 0)
+                            ERRORLED = 1;
+                        else
+                            ERRORLED = 0;
+                    }
+
+                }
+                else if(implausibility){
+                    ERRORLED = 1;
+                }
+                else ERRORLED = 0;
+                
+                //brake lights
+                switch(info_brakes){
+                    case(INFO_no_braking):
+                        BRAKELIGHTS = 0;
+                        break;
+                    case(INFO_hard_braking):
+                        infoBrakingCounter ++;
+                        if(infoBrakingCounter > 3000){
+                            infoBrakingCounter = 0;
+                            if(BRAKELIGHTS == 1)
+                                BRAKELIGHTS = 0;
+                            else
+                                BRAKELIGHTS = 1;
+                        }
+                        break;
+                    case(INFO_braking):
+                        BRAKELIGHTS = 1;
+                }
+        
                 break;
                 
         }
@@ -221,6 +243,7 @@ void stop_adc(void)
 void init_state(void)
 {
     car_state = FSM_not_ready_to_drive;
+    info_brakes = INFO_no_braking;
 }
 
 /*************************************************
