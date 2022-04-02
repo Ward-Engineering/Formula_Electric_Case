@@ -12,7 +12,8 @@
 
 #define SERVO LATAbits.LA6
 #define ONLED LATAbits.LA7
-#define IMPLA LATAbits.LA5
+#define ERRORLED LATAbits.LA5
+#define BRAKELIGHTS     LATAbits.LA4
 /*
  * Prototypes
  */
@@ -33,11 +34,14 @@ bool getONOFFToggle(void);
 bool readingThrottle = false;
 bool ONOFFWasPressed = false;
 bool implausibility = false;
+bool hardBraking = false;
+bool disConnected = false;
 char throttleInput = 0;
+char rawThrottleInput = 100;
 char brakeInput = 0;
 int brakeCounter = 0;
 int brakeOnTime = 0;
-int implaCounter = 0;
+int disconnectCounter = 0;
 static enum{FSM_ready_to_drive,FSM_not_ready_to_drive}car_state;
 /*
  * Interrupt Service Routines
@@ -53,11 +57,29 @@ void __interrupt (high_priority) high_ISR(void)
         if(readingThrottle)
         {
             throttleInput = ADRESH;
+            rawThrottleInput = ADRESH;
         }
         else
         {
             brakeInput = ADRESH;
         }
+        
+        if(brakeInput > 200)
+        {
+            hardBraking = true;
+        }
+        else
+        {
+            hardBraking = false;   
+        }
+        
+        if((rawThrottleInput < 5) || (brakeInput > 250))
+        {
+            disConnected = true;
+        }
+        else disConnected = false;
+        
+        
         
         if((brakeInput > 7 && throttleInput > 7))
         {
@@ -88,18 +110,24 @@ void __interrupt (high_priority) high_ISR(void)
             brakeOnTime = brakeInput *0.09 + 29;
             SERVO = 1;
         }
-        //flash light if implausibility
-        if(implausibility){
-            implaCounter ++;
-            if(implaCounter > 2000)
+        //flash light if disconnected, light on when implausibility 
+        if(disConnected)
+        {
+            disconnectCounter ++;
+            if(disconnectCounter > 2000)
             {
-                implaCounter = 0;
-                if(IMPLA == 0)
-                    IMPLA = 1;
+                disconnectCounter = 0;
+                if(ERRORLED == 0)
+                    ERRORLED = 1;
                 else
-                    IMPLA = 0;
+                    ERRORLED = 0;
             }
+            
         }
+        else if(implausibility){
+            ERRORLED = 1;
+        }
+        else ERRORLED = 0;
         
         TMR0L = 16;
         INTCONbits.TMR0IF = 0;
@@ -207,7 +235,7 @@ void initChip(void)
 	ACTCON = 0x90; //Enable active clock tuning for USB operation
 
     LATA = 0x00; //Initial PORTA
-    TRISA = 0b00011111; //Define PORTA as input
+    TRISA = 0b00001111; //Define PORTA as input
     ADCON1 = 0x00; //AD voltage reference
     ANSELA = 0b00000001; // define analog or digital
     CM1CON0 = 0x00; //Turn off Comparator
