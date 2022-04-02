@@ -81,7 +81,7 @@ void __interrupt (high_priority) high_ISR(void)
         
         
         
-        if((brakeInput > 7 && throttleInput > 7))
+        if((brakeInput > 7 && throttleInput > 28))
         {
             throttleInput = 0;
             implausibility = true;
@@ -168,9 +168,10 @@ void main(void)
                     car_state = FSM_not_ready_to_drive;
                 }
                 ONLED = 1;
-                CCPR2L = throttleInput;
-                
-                
+                if((throttleInput - 20 ) > 0)
+                    CCPR2L = throttleInput - 20;
+                else
+                    CCPR2L = 0;
                 break;
                 
         }
