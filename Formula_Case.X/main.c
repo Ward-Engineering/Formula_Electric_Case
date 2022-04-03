@@ -46,6 +46,7 @@ int brakeCounter = 0;
 int brakeOnTime = 0;
 int infoBrakingCounter = 0;
 int disconnectCounter = 0;
+char adcStartCounter = 0;
 static enum{FSM_ready_to_drive,FSM_not_ready_to_drive}car_state;
 static enum{INFO_braking,INFO_no_braking,INFO_hard_braking,INFO_abs_braking}info_brakes;
 /*
@@ -101,7 +102,6 @@ void __interrupt (high_priority) high_ISR(void)
         
         PIR1bits.ADIF = 0;
         readingThrottle = !readingThrottle;
-        start_adc();
     }
     if(INTCONbits.TMR0IF == 1)
     {
@@ -139,7 +139,12 @@ void __interrupt (high_priority) high_ISR(void)
             }
             SERVO = 1;
         }
-        
+        // start adc when necesarry (at 250Hz)
+        adcStartCounter ++;
+        if(adcStartCounter > 200){
+            adcStartCounter = 0;
+            start_adc();
+        }
         TMR0L = 16;
         INTCONbits.TMR0IF = 0;
     }
