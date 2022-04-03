@@ -14,6 +14,8 @@
 #define ONLED LATAbits.LA7
 #define ERRORLED LATAbits.LA5
 #define BRAKELIGHTS     LATAbits.LA4
+#define ABSINPUT    180
+#define ABSLED  LATBbits.LB6
 /*
  * Prototypes
  */
@@ -35,15 +37,17 @@ bool readingThrottle = false;
 bool ONOFFWasPressed = false;
 bool implausibility = false;
 bool disConnected = false;
+bool absBraking = false;
 char throttleInput = 0;
 char rawThrottleInput = 100;
 char brakeInput = 0;
+int brakeABSDelayCounter = 0;
 int brakeCounter = 0;
 int brakeOnTime = 0;
 int infoBrakingCounter = 0;
 int disconnectCounter = 0;
 static enum{FSM_ready_to_drive,FSM_not_ready_to_drive}car_state;
-static enum{INFO_braking,INFO_no_braking,INFO_hard_braking}info_brakes;
+static enum{INFO_braking,INFO_no_braking,INFO_hard_braking,INFO_abs_braking}info_brakes;
 /*
  * Interrupt Service Routines
  */
@@ -65,7 +69,11 @@ void __interrupt (high_priority) high_ISR(void)
             brakeInput = ADRESH;
         }
         
-        if(brakeInput > 150){
+        if(brakeInput > ABSINPUT)
+        {
+            info_brakes = INFO_abs_braking;
+        }
+        else if(brakeInput > 100){
             info_brakes = INFO_hard_braking;
         }
         else if(brakeInput > 1){
@@ -108,7 +116,27 @@ void __interrupt (high_priority) high_ISR(void)
         if(brakeCounter > 1000)
         {
             brakeCounter = 0;
-            brakeOnTime = brakeInput *0.09 + 29;
+            
+            if(info_brakes == INFO_abs_braking && car_state == FSM_ready_to_drive){
+                ABSLED = 1;
+                //toggle between abs position and the normal position
+                brakeABSDelayCounter ++;
+                if(brakeABSDelayCounter > 2){
+                    brakeABSDelayCounter = 0;
+                    if(absBraking)
+                    {
+                        brakeInput = brakeInput - 30;
+                        
+                    }
+                    absBraking = !absBraking;
+                    brakeOnTime = brakeInput *0.09 + 29;
+                }
+            }
+            else
+            {
+                ABSLED = 0;
+                brakeOnTime = brakeInput *0.09 + 29;
+            }
             SERVO = 1;
         }
         
@@ -138,8 +166,7 @@ void main(void)
             case FSM_not_ready_to_drive:
                 if(getONOFFToggle())
                 {
-                    car_state = FSM_ready_to_drive;
-                    
+                    car_state = FSM_ready_to_drive;  
                 }
                 ONLED = 0;
                 CCPR2L = 0;
@@ -168,7 +195,6 @@ void main(void)
                         else
                             ERRORLED = 0;
                     }
-
                 }
                 else if(implausibility){
                     ERRORLED = 1;
@@ -180,6 +206,7 @@ void main(void)
                     case(INFO_no_braking):
                         BRAKELIGHTS = 0;
                         break;
+                    case(INFO_abs_braking):
                     case(INFO_hard_braking):
                         infoBrakingCounter ++;
                         if(infoBrakingCounter > 3000){
@@ -193,13 +220,9 @@ void main(void)
                     case(INFO_braking):
                         BRAKELIGHTS = 1;
                 }
-        
                 break;
-                
-        }
-        
+        } 
     }
-
 }
 
 bool getONOFFToggle(void)
