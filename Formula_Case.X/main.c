@@ -27,8 +27,13 @@ void stop_adc(void);
 void enable_adc(void);
 void init_state(void);
 bool getONOFFToggle(void);
-
-
+void get_brake_state(void);
+void check_for_errors();
+void apply_throttle();
+void apply_errors();
+void apply_brake_lights();
+void read_from_adc(void);
+void apply_brakes(void);
 /*
  * Global Variables
  */
@@ -60,86 +65,21 @@ void __interrupt (high_priority) high_ISR(void)
     if(PIR1bits.ADIF == 1)
     {
         //adc interrupt
-        if(readingThrottle)
-        {
-            throttleInput = ADRESH;
-            rawThrottleInput = ADRESH;
-        }
-        else
-        {
-            brakeInput = ADRESH;
-        }
+        read_from_adc();
         
-        if(brakeInput > ABSINPUT)
-        {
-            info_brakes = INFO_abs_braking;
-        }
-        else if(brakeInput > 100){
-            info_brakes = INFO_hard_braking;
-        }
-        else if(brakeInput > 1){
-            info_brakes = INFO_braking;
-        }
-        else 
-            info_brakes = INFO_no_braking;
+        get_brake_state();
         
-        if((rawThrottleInput < 5) || (brakeInput > 250))
-        {
-            disConnected = true;
-        }
-        else disConnected = false;
-        
-        
-        
-        if((brakeInput > 7 && throttleInput > 28))
-        {
-            throttleInput = 0;
-            implausibility = true;
-        }
-        else
-            implausibility = false;
+        check_for_errors();
         
         
         PIR1bits.ADIF = 0;
-        readingThrottle = !readingThrottle;
+        
     }
     if(INTCONbits.TMR0IF == 1)
     {
-        //apply brake
-        //total period is 20000 us, range is 575 - 2460 us, interrupt gets called every 20 us
-        if(brakeCounter > brakeOnTime)
-        {
-            SERVO = 0;
-        }
-        
-        brakeCounter ++;
-        if(brakeCounter > 1000)
-        {
-            brakeCounter = 0;
-            
-            if(info_brakes == INFO_abs_braking && car_state == FSM_ready_to_drive){
-                ABSLED = 1;
-                //toggle between abs position and the normal position
-                brakeABSDelayCounter ++;
-                if(brakeABSDelayCounter > 2){
-                    brakeABSDelayCounter = 0;
-                    if(absBraking)
-                    {
-                        brakeInput = brakeInput - 30;
-                        
-                    }
-                    absBraking = !absBraking;
-                    brakeOnTime = brakeInput *0.09 + 29;
-                }
-            }
-            else
-            {
-                ABSLED = 0;
-                brakeOnTime = brakeInput *0.09 + 29;
-            }
-            SERVO = 1;
-        }
-        // start adc when necesarry (at 250Hz)
+        //timer 0 interrupt
+        apply_brakes();
+        // start adc (at 250Hz)
         adcStartCounter ++;
         if(adcStartCounter > 200){
             adcStartCounter = 0;
@@ -183,51 +123,65 @@ void main(void)
                     car_state = FSM_not_ready_to_drive;
                 }
                 ONLED = 1;
-                if((throttleInput - 20 ) > 0)
-                    CCPR2L = throttleInput - 20;
-                else
-                    CCPR2L = 0;
                 
-                //flash light if disconnected, light on when implausibility 
-                if(disConnected)
-                {
-                    disconnectCounter ++;
-                    if(disconnectCounter > 3000)
-                    {
-                        disconnectCounter = 0;
-                        if(ERRORLED == 0)
-                            ERRORLED = 1;
-                        else
-                            ERRORLED = 0;
-                    }
-                }
-                else if(implausibility){
-                    ERRORLED = 1;
-                }
-                else ERRORLED = 0;
+                apply_throttle();
                 
-                //brake lights
-                switch(info_brakes){
-                    case(INFO_no_braking):
-                        BRAKELIGHTS = 0;
-                        break;
-                    case(INFO_abs_braking):
-                    case(INFO_hard_braking):
-                        infoBrakingCounter ++;
-                        if(infoBrakingCounter > 3000){
-                            infoBrakingCounter = 0;
-                            if(BRAKELIGHTS == 1)
-                                BRAKELIGHTS = 0;
-                            else
-                                BRAKELIGHTS = 1;
-                        }
-                        break;
-                    case(INFO_braking):
-                        BRAKELIGHTS = 1;
-                }
+                apply_errors();
+                
+                apply_brake_lights();
                 break;
         } 
     }
+}
+
+void apply_brakes(void){
+    //apply brake
+    //total period is 20000 us, range is 575 - 2460 us, interrupt gets called every 20 us
+    if(brakeCounter > brakeOnTime)
+    {
+        SERVO = 0;
+    }
+
+    brakeCounter ++;
+    if(brakeCounter > 1000)
+    {
+        brakeCounter = 0;
+
+        if(info_brakes == INFO_abs_braking && car_state == FSM_ready_to_drive && !(disConnected)){
+            ABSLED = 1;
+            //toggle between abs position and the normal position
+            brakeABSDelayCounter ++;
+            if(brakeABSDelayCounter > 2){
+                brakeABSDelayCounter = 0;
+                if(absBraking)
+                {
+                    brakeInput = brakeInput - 30;
+
+                }
+                absBraking = !absBraking;
+                brakeOnTime = brakeInput *0.09 + 29;
+            }
+        }
+        else
+        {
+            ABSLED = 0;
+            brakeOnTime = brakeInput *0.09 + 29;
+        }
+        SERVO = 1;
+    }
+}
+
+void read_from_adc(void){
+    if(readingThrottle)
+        {
+            throttleInput = ADRESH;
+            rawThrottleInput = ADRESH;
+        }
+        else
+        {
+            brakeInput = ADRESH;
+        }
+        readingThrottle = !readingThrottle;
 }
 
 bool getONOFFToggle(void)
@@ -236,6 +190,90 @@ bool getONOFFToggle(void)
     bool toggled = (ONOFFPressed && !ONOFFWasPressed);
     ONOFFWasPressed = ONOFFPressed;
     return toggled;
+}
+
+void apply_brake_lights(void){
+    //brake lights
+    switch(info_brakes){
+        case(INFO_no_braking):
+            BRAKELIGHTS = 0;
+            break;
+        case(INFO_abs_braking):
+        case(INFO_hard_braking):
+            infoBrakingCounter ++;
+            if(infoBrakingCounter > 3000){
+                infoBrakingCounter = 0;
+                if(BRAKELIGHTS == 1)
+                    BRAKELIGHTS = 0;
+                else
+                    BRAKELIGHTS = 1;
+            }
+            break;
+        case(INFO_braking):
+            BRAKELIGHTS = 1;
+    }
+}
+
+void check_for_errors(void)
+{
+    if((rawThrottleInput < 5) || (brakeInput > 250))
+        {
+            disConnected = true;
+        }
+        else disConnected = false;
+        
+        
+        
+        if((brakeInput > 7 && throttleInput > 28))
+        {
+            throttleInput = 0;
+            implausibility = true;
+        }
+        else
+            implausibility = false;
+}
+
+void apply_errors(void){
+    //flash light if disconnected, light on when implausibility 
+    if(disConnected)
+    {
+        disconnectCounter ++;
+        if(disconnectCounter > 3000)
+        {
+            disconnectCounter = 0;
+            if(ERRORLED == 0)
+                ERRORLED = 1;
+            else
+                ERRORLED = 0;
+        }
+    }
+    else if(implausibility){
+        ERRORLED = 1;
+    }
+    else ERRORLED = 0;
+}
+
+void apply_throttle(void)
+{
+    if((throttleInput - 20 ) > 0)
+                    CCPR2L = throttleInput - 20;
+                else
+                    CCPR2L = 0;
+}
+
+void get_brake_state(void){
+    if(brakeInput > ABSINPUT)
+    {
+        info_brakes = INFO_abs_braking;
+    }
+    else if(brakeInput > 100){
+        info_brakes = INFO_hard_braking;
+    }
+    else if(brakeInput > 1){
+        info_brakes = INFO_braking;
+    }
+    else 
+        info_brakes = INFO_no_braking;
 }
 
 
