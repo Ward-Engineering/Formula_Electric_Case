@@ -269,7 +269,7 @@ void get_brake_state(void){
     else if(brakeInput > 100){
         info_brakes = INFO_hard_braking;
     }
-    else if(brakeInput > 1){
+    else if(brakeInput > 7){
         info_brakes = INFO_braking;
     }
     else 
